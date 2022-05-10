@@ -1,0 +1,143 @@
+---
+title: "bond"
+output: html_document
+---
+
+
+## Part 1: EDA
+```{r setup, include=FALSE}
+library(tseries)
+```
+
+
+```{r cars}
+bond= read.csv('bond.csv')
+bond = bond[bond$observation_date >= "1974-01-01" & bond$observation_date <= "2021-10-01", ]
+```
+```{r}
+library(anytime)
+bond$observation_date= anydate(bond$observation_date)
+```
+
+```{r}
+class(bond$observation_date)
+```
+
+
+```{r}
+baa = bond[,2]
+aaa = bond[,4]
+spread = bond$BAA10YM
+plot(baa ~ bond$observation_date, type = "l", main = "Baa Monthly Corporate Bond Yield")
+```
+```{r}
+plot(aaa~ bond$observation_date, type = "l", main = "AAA Monthly Corporate Bond Yield")
+```
+
+## kpss test
+
+```{r}
+kpss.test(baa, null = "Trend")
+kpss.test(aaa, null = "Trend")
+kpss.test(spread, null = "Trend")
+```
+
+### non stationary even after removing trends
+
+```{r}
+plot(spread~ bond$observation_date, type = "l", main = "Credit Spread")
+```
+```{r}
+baa_aaa = lm(baa~ aaa, data=bond)
+summary(baa_aaa)
+```
+
+```{r}
+baa_credit = lm(baa~ spread, data=bond)
+summary(baa_credit)
+```
+
+```{r}
+acf(baa)
+pacf(baa)
+```
+
+```{r}
+acf(spread)
+pacf(spread)
+```
+```{r}
+plot(baa_aaa$residuals)
+```
+```{r}
+plot(baa_credit$residuals)
+```
+```{r}
+bond$aaa_spread = bond$BAA - bond$AAA
+aaa_spread = bond$aaa_spread
+```
+
+```{r}
+plot(bond$aaa_spread~ bond$observation_date, type = "l", main = "Spread Against AAA Monthly Corporate Bond Yield")
+```
+```{r}
+acf(aaa_spread)
+```
+```{r}
+pacf(aaa_spread)
+```
+```{r}
+aaa_spread_lm = lm(baa~aaa_spread)
+summary(aaa_spread_lm)
+```
+
+```{r}
+plot(aaa_spread_lm$residuals)
+```
+```{r}
+library(forecast)
+arima_baa = auto.arima(baa)
+```
+
+```{r}
+acf(arima_baa$residuals)
+pacf(arima_baa$residuals)
+```
+
+```{r}
+plot(arima_baa$residuals)
+```
+```{r}
+arima_spread = auto.arima(spread)
+arima_spread
+```
+
+```{r}
+acf(arima_spread$residuals)
+pacf(arima_spread$residuals)
+plot(arima_spread$residuals)
+```
+
+### heteroskedasticity tests
+
+```{r}
+library(lmtest)
+```
+
+
+```{r}
+Box.test(arima_baa$residuals, type= "Ljung")
+Box.test(arima_spread$residuals, type= "Ljung")
+```
+
+# Part 2: Fitting Model
+
+## Cointegration
+```{r}
+library(urca)
+```
+
+```{r}
+
+```
+

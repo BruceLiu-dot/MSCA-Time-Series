@@ -1,0 +1,98 @@
+---
+title: "Project EDA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read in Data
+
+```{r}
+library(fpp)
+lty <- read.csv('10LTY.csv')
+cpi <- read.csv('CPI.csv')
+mmm <- read.csv('MMMFFAQ027S.csv')
+tb <- read.csv('TB3MS.csv')
+
+
+# MMM 1974-01-01 to 2021-10-1
+mmm <- tail(mmm, -113)
+lty <- lty[169:742,]
+cpi <- cpi[325:898,]
+tb <- tb[481:1054,]
+lty_tb_diff <- lty$IRLTLT01USM156N - tb$TB3MS
+lty_tb <- data.frame(DATE = cpi$DATE, value = lty_tb_diff)
+```
+
+## Cubic Spline interpolation for MMM
+
+```{r}
+# Check date with other time series first
+
+cpi$DATE <- as.Date(cpi$DATE)
+mmm$DATE <- as.Date(mmm$DATE)
+months <- lapply(X = mmm$DATE, FUN = seq.Date, by = "month", length.out = 3)
+months <- data.frame(DATE = do.call(what = c, months))
+
+
+library(dplyr)
+monthly_data <- left_join(x = months, y = mmm, by = "DATE")
+monthly_data <- monthly_data[-c(575,576),]
+library(zoo)
+monthly_data$MMMFFAQ027S <- na.spline(object = monthly_data$MMMFFAQ027S)
+```
+
+## EDA for MMM
+
+```{r}
+tsdisplay(monthly_data$MMMFFAQ027S, main = 'Money Market Fund from Spline Interpolation')
+```
+
+As expected, since the data is generated through spline interpolation, there will bound to be autocorrelation present and the series is not stationary.
+
+## EDA for CPI
+
+```{r}
+cpi_ts <- ts(cpi$CPIAUCSL, start = c(1974,1), frequency = 12)
+tsdisplay(cpi_ts, main = 'Consumer Price Index (all urban consumers)')
+```
+### Stationary test
+
+```{r}
+adf.test(cpi_ts)
+kpss.test(cpi_ts, null = 'Trend')
+kpss.test(cpi_ts)
+```
+
+We see that the CPI data is non-stationary.
+
+## EDA for Difference between LTY and TB
+
+### Plots
+```{r}
+lty_tb_ts <- ts(lty_tb_diff, start = c(1974,1), frequency = 12)
+
+
+tsdisplay(lty_tb_ts, main = 'Difference between Long Term Yeild and Treasury Bill Rate')
+```
+### Stationary Test
+
+```{r}
+adf.test(lty_tb_ts)
+kpss.test(lty_tb_ts, null = 'Trend')
+kpss.test(lty_tb_ts)
+```
+We see that the difference between long term yield and treasury bill is stationary.
+
+## Write out csv files
+
+```{r}
+write.csv(monthly_data,'C:/Users/bruce/Desktop/Spring 2022/Time Series/Project/data/MMM.csv', row.names = FALSE)
+write.csv(cpi,'C:/Users/bruce/Desktop/Spring 2022/Time Series/Project/data/cpi.csv', row.names = FALSE)
+write.csv(lty_tb,'C:/Users/bruce/Desktop/Spring 2022/Time Series/Project/data/LTY_TB_Diff.csv', row.names = FALSE)
+
+
+```
+

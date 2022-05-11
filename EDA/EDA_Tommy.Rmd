@@ -1,0 +1,126 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tseries)
+library(anytime)
+```
+
+**S&P Index**
+```{r cars}
+
+SP= read.csv('S&P.csv')
+SP<-SP[dim(SP)[1]:1,]
+
+SP$Date = anydate(SP$Date)
+
+rownames(SP) = seq(length=nrow(SP))
+
+SP
+```
+```{r}
+plot(SP$Value~SP$Date, type = "l")
+```
+```{r}
+summary(SP$Value)
+```
+
+```{r}
+acf(SP$Value)
+```
+```{r}
+kpss.test(SP$Value,null="Trend")
+```
+
+
+**S&P Dividend**
+```{r pressure, echo=FALSE}
+
+Dividend = read.csv('Dividend.csv')
+
+Dividend<-Dividend[dim(Dividend)[1]:1,]
+Dividend$Date = anydate(Dividend$Date)
+
+rownames(Dividend) = seq(length=nrow(Dividend))
+
+Dividend
+```
+```{r}
+plot(Dividend$Value~Dividend$Date, type = "l")
+```
+```{r}
+acf(Dividend$Value)
+```
+
+```{r}
+summary(Dividend$Value)
+```
+
+```{r}
+kpss.test(Dividend$Value,null="Trend")
+```
+
+
+**Sum of squared return in a month**
+```{r}
+
+SP_Daily= read.csv('S&P Daily.csv')
+SP_Daily <- data.frame(names = row.names(SP_Daily), SP_Daily)
+
+colnames(SP_Daily) <- c('Date','Value')
+rownames(SP_Daily) = seq(length=nrow(SP_Daily))
+
+SP_Daily$Date = anydate(SP_Daily$Date)
+SP_Daily
+```
+```{r}
+SP_Daily$Return = diff(SP_Daily$Value)/lag(SP_Daily$Value)
+SP_Daily <- na.omit(transform(SP_Daily, Return = c(NA, Return[-nrow(SP_Daily)])))
+SP_Daily$Square_Return ='^'(SP_Daily$Return,2)
+
+SP_Daily
+```
+
+```{r}
+library("lubridate")
+library("dplyr")
+
+data_new2 <- SP_Daily
+data_new2$year_month <- floor_date(data_new2$Date,  
+                                   "month")
+
+monthly_return_square <- data_new2 %>%                         
+  group_by(year_month) %>% 
+  dplyr::summarize(value = sum(Square_Return)) %>% 
+  as.data.frame()
+
+monthly_return_square  
+```
+
+```{r}
+plot(monthly_return_square$value~monthly_return_square$year_month, type = "l")
+```
+
+```{r}
+acf(monthly_return_square$value)
+```
+```{r}
+kpss.test(monthly_return_square$value)
+```
+
+
+
+
+
+
+
+
+
+
+

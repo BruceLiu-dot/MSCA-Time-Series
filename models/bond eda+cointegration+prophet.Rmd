@@ -1,0 +1,365 @@
+---
+title: "bond"
+output: html_document
+---
+
+
+## Part 1: EDA
+```{r setup, include=FALSE}
+library(tseries)
+```
+
+
+```{r cars}
+bond= read.csv('bond.csv')
+bond = bond[bond$observation_date >= "1974-01-01" & bond$observation_date <= "2021-10-01", ]
+bond
+```
+
+```{r}
+library(anytime)
+bond$observation_date= anydate(bond$observation_date)
+```
+
+```{r}
+class(bond$observation_date)
+```
+
+
+```{r}
+baa = bond[,2]
+aaa = bond[,4]
+spread = bond$BAA10YM
+plot(baa ~ bond$observation_date, type = "l", main = "Baa Monthly Corporate Bond Yield")
+```
+```{r}
+plot(aaa~ bond$observation_date, type = "l", main = "AAA Monthly Corporate Bond Yield")
+```
+
+## kpss test
+
+```{r}
+kpss.test(baa, null = "Trend")
+kpss.test(aaa, null = "Trend")
+kpss.test(spread, null = "Trend")
+```
+
+### non stationary even after removing trends
+
+```{r}
+plot(spread~ bond$observation_date, type = "l", main = "Credit Spread")
+```
+```{r}
+baa_aaa = lm(baa~ aaa, data=bond)
+summary(baa_aaa)
+```
+
+```{r}
+baa_credit = lm(baa~ spread, data=bond)
+summary(baa_credit)
+```
+
+```{r}
+acf(baa)
+pacf(baa)
+```
+
+```{r}
+acf(spread)
+pacf(spread)
+```
+```{r}
+plot(baa_aaa$residuals)
+```
+```{r}
+plot(baa_credit$residuals)
+```
+```{r}
+bond$aaa_spread = bond$BAA - bond$AAA
+aaa_spread = bond$aaa_spread
+```
+
+```{r}
+plot(bond$aaa_spread~ bond$observation_date, type = "l", main = "Spread Against AAA Monthly Corporate Bond Yield")
+```
+```{r}
+acf(aaa_spread)
+```
+```{r}
+pacf(aaa_spread)
+```
+```{r}
+aaa_spread_lm = lm(baa~aaa_spread)
+summary(aaa_spread_lm)
+```
+
+```{r}
+plot(aaa_spread_lm$residuals)
+```
+```{r}
+library(forecast)
+arima_baa = auto.arima(baa)
+```
+
+```{r}
+acf(arima_baa$residuals)
+pacf(arima_baa$residuals)
+```
+
+```{r}
+plot(arima_baa$residuals)
+```
+```{r}
+arima_spread = auto.arima(spread)
+arima_spread
+```
+
+```{r}
+acf(arima_spread$residuals)
+pacf(arima_spread$residuals)
+plot(arima_spread$residuals)
+```
+
+### heteroskedasticity tests
+
+```{r}
+library(lmtest)
+```
+
+
+```{r}
+Box.test(arima_baa$residuals, type= "Ljung")
+Box.test(arima_spread$residuals, type= "Ljung")
+```
+
+# Part 2: Fitting Model
+
+### train test split
+
+```{r}
+train = bond[bond$observation_date >= "1974-01-01" & bond$observation_date <= "2020-10-01",][,1:2]
+test = bond[bond$observation_date >= "2020-11-01" & bond$observation_date <= "2021-10-01",][,1:2]
+```
+
+```{r}
+train_aaa_temp = bond[bond$observation_date >= "1974-01-01" & bond$observation_date <= "2020-10-01",]
+train_aaa = train_aaa_temp$AAA
+test_aaa_temp = bond[bond$observation_date >= "2020-11-01" & bond$observation_date <= "2021-10-01",]
+test_aaa = test_aaa_temp$AAA
+```
+
+```{r}
+train_baa_temp = bond[bond$observation_date >= "1974-01-01" & bond$observation_date <= "2020-10-01",]
+train_baa = train_baa_temp$BAA
+test_baa_temp = bond[bond$observation_date >= "2020-11-01" & bond$observation_date <= "2021-10-01",]
+test_baa = test_baa_temp$BAA
+```
+
+```{r}
+baa_train1 <- bond[bond$observation_date >= "1974-01-01" & bond$observation_date <= "2016-10-01",]$BAA
+baa_val1 <- bond[bond$observation_date >= "2016-11-01" & bond$observation_date <= "2017-10-01",]$BAA 
+baa_train2 <- bond[bond$observation_date >= "1975-01-01" & bond$observation_date <= "2017-10-01",]$BAA 
+baa_val2 <- bond[bond$observation_date >= "2017-11-01" & bond$observation_date <= "2018-10-01",]$BAA  
+baa_train3 <- bond[bond$observation_date >= "1976-11-01" & bond$observation_date <= "2018-10-01",]$BAA 
+baa_val3 <- bond[bond$observation_date >= "2018-11-01" & bond$observation_date <= "2019-10-01",]$BAA 
+
+```
+
+```{r}
+aaa_train1 <- bond[bond$observation_date >= "1974-01-01" & bond$observation_date <= "2016-10-01",]$AAA
+aaa_val1 <- bond[bond$observation_date >= "2016-11-01" & bond$observation_date <= "2017-10-01",]$AAA 
+aaa_train2 <- bond[bond$observation_date >= "1975-01-01" & bond$observation_date <= "2017-10-01",]$AAA 
+aaa_val2 <- bond[bond$observation_date >= "2017-11-01" & bond$observation_date <= "2018-10-01",]$AAA  
+aaa_train3 <- bond[bond$observation_date >= "1976-11-01" & bond$observation_date <= "2018-10-01",]$AAA 
+aaa_val3 <- bond[bond$observation_date >= "2018-11-01" & bond$observation_date <= "2019-10-01",]$AAA 
+```
+
+
+## Cointegration
+
+### Granger Causality Test
+```{r}
+library(lmtest)
+```
+
+```{r}
+grangertest(aaa, baa, order = 2)
+```
+
+### at 0.05 significance level, we reject the null hypothesis that aaa does not granger - cause baa; it is reasonable to use aaa yield to predict baa
+
+
+```{r}
+grangertest(baa, aaa, order = 2)
+```
+
+
+```{r}
+#install.packages("dynlm")
+library(dynlm)
+```
+
+```{r}
+coint_model = dynlm(baa~aaa)
+summary(coint_model)
+res_coint_model = residuals(coint_model)
+```
+
+```{r}
+library(urca)
+ur.df(res_coint_model)
+```
+
+
+reject the null hypothesis - there is cointegration relationship
+
+## Predicting using cointegration model
+
+
+```{r}
+ts_baa_train = ts(baa, start = c(1974,1), end = c(2020,9), frequency = 12)
+ts_baa_test = ts(baa, start = c(2020,10), end = c(2021,10), frequency = 12)
+ts_aaa_train = ts(aaa, start = c(1974,1), end = c(2020,9), frequency = 12)
+ts_aaa_test = ts(aaa, start = c(2020,10), end = c(2021,11), frequency = 12)
+```
+
+
+
+```{r}
+data <- cbind(train_baa,train_aaa)
+cajo <- ca.jo(data, ecdet = "none", type="eigen", K=2, spec="longrun")
+summary(cajo)
+```
+
+## fitting a Vector Error Correction Model
+
+
+```{r}
+library(Metrics)
+library(tsDyn)
+VECM_tsDyn = VECM(cbind(train_baa, train_aaa), lag=2, r=1,estim = "ML")
+VECM_predict= VECM_tsDyn$residuals[,1]+ train_baa
+matplot(cbind(VECM_predict, train_baa), type="l")
+legend("topright",legend=c("Forecast train","Actual train"),
+       col=c("black","red"), lty=1:5
+       )
+smape(VECM_predict, train_baa)
+```
+
+```{r}
+plot(VECM_tsDyn$residuals[,1], type="l")
+hist(VECM_tsDyn$residuals[,1])
+```
+
+
+
+
+```{r}
+library(Metrics)
+predvecm<-predict(VECM_tsDyn, n.ahead=12)
+smape(predvecm[,1], test_baa)
+```
+
+```{r}
+Box.test(VECM_tsDyn$residuals[,1], type= "Ljung")
+```
+
+### cross validation
+
+
+```{r}
+VECM_val1 = VECM(cbind(baa_train1, aaa_train1), lag=2, r=1,estim = "ML")
+VECM_predict_val1= VECM_val1$residuals[,1]+ baa_train1
+smape(VECM_predict_val1, baa_train1)
+```
+
+```{r}
+library(Metrics)
+predvecm1<-predict(VECM_val1, n.ahead=12)
+smape(predvecm1[,1], baa_val1)
+```
+
+```{r}
+VECM_val2 = VECM(cbind(baa_train2, aaa_train2), lag=2, r=1,estim = "ML")
+VECM_predict_val2= VECM_val2$residuals[,1]+ baa_train2
+smape(VECM_predict_val2, baa_train2)
+```
+```{r}
+predvecm2<-predict(VECM_val2, n.ahead=12)
+smape(predvecm2[,1], baa_val2)
+```
+```{r}
+VECM_val3 = VECM(cbind(baa_train3, aaa_train3), lag=2, r=1,estim = "ML")
+VECM_predict_val3= VECM_val3$residuals[,1]+ baa_train3
+smape(VECM_predict_val3, baa_train3)
+```
+```{r}
+predvecm3<-predict(VECM_val3, n.ahead=12)
+smape(predvecm3[,1], baa_val3)
+```
+
+
+## Prophet
+
+```{r}
+#install.packages("prophet")
+library(prophet)
+```
+
+```{r}
+colnames(train) <- c("ds", "y")
+m = prophet(train)
+```
+```{r}
+future <- make_future_dataframe(m, periods = 12)
+forecast <- predict(m, future)
+```
+
+```{r}
+plot(m, forecast)
+```
+
+### the fit doesn't look good; try multivarate by adding AAA yield instead
+
+
+## multivariate
+
+```{r}
+train$AAA= train_aaa
+m=prophet(yearly.seasonality = T)
+m <- add_regressor(m, 'AAA')
+m <- fit.prophet(m, train)
+```
+
+```{r}
+future$AAA = bond[1:574,4]
+forecast <- predict(m, future)
+```
+
+### multivariate prophet evaluation - only add aaa
+
+```{r}
+plot(m,forecast)
+```
+
+```{r}
+prophet_plot_components(m, forecast)
+```
+
+```{r}
+library(Metrics)
+prophet_predicted = forecast$yhat
+length(prophet_predicted)
+residuals_prophet = bond$BAA - prophet_predicted
+plot(residuals_prophet, type="l")
+hist(residuals_prophet)
+smape(bond$BAA, prophet_predicted)
+smape(test_baa, tail(prophet_predicted,12))
+```
+
+```{r}
+Box.test(residuals_prophet, type= "Ljung")
+```
+
+
+

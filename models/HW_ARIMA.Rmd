@@ -1,0 +1,312 @@
+---
+title: "Modeling"
+output: html_document
+date: '2022-05-11'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read in Data
+
+```{r}
+cpi <- read.csv('cpi.csv')
+bond <- read.csv('bond.csv')
+dividend <- read.csv('Dividend.csv')
+tb <- read.csv('3MTBSMR.csv')
+lty_tb_df <- read.csv('LTY_TB_Diff.csv')
+mmm <- read.csv('mmm.csv')
+sp_daily <- read.csv('S&P Daily.csv')
+# Sum of squared stationary 
+spPE <- read.csv('SP500PER.csv')
+```
+
+# Split into 3-fold validation and test
+
+```{r}
+baa <- ts(bond$BAA[169:742],start=c(1974,1),frequency = 12)
+
+# Overall Train
+baa_train <- window(baa,1974, c(2020, 10))
+
+# 3 fold
+baa_train1 <- window(baa,1974,c(2016,10))
+baa_val1 <- window(baa,c(2016,11),c(2017,10))
+baa_train2 <- window(baa,1975,c(2017,10))
+baa_val2 <- window(baa,c(2017,11),c(2018,10))
+baa_train3 <- window(baa,1976,c(2018,10))
+baa_val3 <- window(baa,c(2018,11),c(2019,10))
+
+baa_test <- window(baa, c(2019,11), c(2020, 10))
+```
+
+
+## STL
+
+```{r}
+library(forecast)
+library(Metrics)
+STL = mstl(baa_train)
+plot(STL)
+```
+
+We see that the decomposition shows strong trend and seasonality within the data. Therefore, Holt-Winter is a good model here for forecasting.
+
+### Holt-Winter CV to choose additive or multiplicative
+
+```{r}
+hw_add_smape <- numeric(0)
+hw_mul_smape <- numeric(0)
+
+hw1 <- hw(baa_train1, damped = TRUE, seasonal = 'additive')
+hw1_pred <- forecast(hw1, h = 12)$mean
+hw_add_smape[1] <- smape(hw1_pred, baa_val1)
+
+hw2 <- hw(baa_train1, damped = TRUE, seasonal = 'multiplicative')
+hw2_pred <- forecast(hw2, h = 12)$mean
+hw_mul_smape[1] <- smape(hw2_pred, baa_val1)
+
+#2nd fold
+hw1 <- hw(baa_train2, damped = TRUE, seasonal = 'additive')
+hw1_pred <- forecast(hw1, h = 12)$mean
+hw_add_smape[2] <- smape(hw1_pred, baa_val2)
+
+hw2 <- hw(baa_train2, damped = TRUE, seasonal = 'multiplicative')
+hw2_pred <- forecast(hw2, h = 12)$mean
+hw_mul_smape[2] <- smape(hw2_pred, baa_val2)
+
+#3rd fold
+hw1 <- hw(baa_train3, damped = TRUE, seasonal = 'additive')
+hw1_pred <- forecast(hw1, h = 12)$mean
+hw_add_smape[3] <- smape(hw1_pred, baa_val3)
+
+hw2 <- hw(baa_train3, damped = TRUE, seasonal = 'multiplicative')
+hw2_pred <- forecast(hw2, h = 12)$mean
+hw_mul_smape[3] <- smape(hw2_pred, baa_val3)
+
+cat("Average sMAPE for Additive Holt-Winters: ", mean(hw_add_smape), '\n')
+cat("Average sMAPE for Multiplicative Holt-Winters: ", mean(hw_mul_smape))
+```
+
+# HW Fit and Forecast Plots
+```{r}
+
+hw2 <- hw(baa_train3, damped = TRUE, seasonal = 'additive')
+hw2_pred <- forecast(hw2, h = 12)
+
+plot(baa_train3, ylab="BAA Bond Yield", xlim=c(1974,2020), main = 'Additive Holt-Winter Forecast')
+lines(hw2$fitted, lty=2, col="red")
+legend("topright", legend=c("Actual", "Holt-Winter Fit"),
+       col=c("black", "red"), lty = 1, cex=0.8)
+
+plot(hw2_pred, xlim=c(2015, 2022), ylim = c(4,10), ylab = 'BAA Bond Yield')
+lines(hw2_pred$fitted, lty=2, col="red")
+legend("topright", legend=c("Actual", "Holt-Winter Fit"),
+       col=c("black", "red"), lty = 1, cex=0.8)
+```
+
+Additive Holt-Winters shows lower average sMAPE.
+
+### Residuals Check
+```{r}
+hw_res <- residuals(hw2)
+Box.test(hw_res, type="Ljung-Box")
+plot(hw_res, main = 'Residuals from Holt-Winter', ylab = 'Residuals')
+
+```
+
+## Periodogram
+
+```{r}
+N = length(baa_train)
+I = abs(fft(baa_train)/sqrt(N))^2
+P = (4/N) * I
+f = (0:floor(N/2))/N
+plot(f, I[1:((N/2) + 1)], type = "h", xlab = "frequency", ylab = "", main = "Periodogram of BAA data before trend removal", col = "blue")
+```
+
+
+```{r}
+model = stl(baa_train, s.window = "periodic")
+trend <-  model$time.series[, "trend"]
+baa.no.trend <- baa_train - trend
+
+N = length(baa.no.trend)
+I = abs(fft(baa.no.trend)/sqrt(N))^2
+P = (4/N) * I
+f = (0:floor(N/2))/N
+plot(f, I[1:((N/2) + 1)], type = "h", xlab = "frequency", ylab = "", main = "Periodogram of BAA after trend removal", col = "blue")
+
+
+
+```
+
+## ARIMA
+
+```{r}
+arima_smape <- numeric(0)
+
+arima_fit <- auto.arima(baa_train1, seasonal = TRUE)
+arima1_pred <- forecast(arima_fit, h = 12)$mean
+arima_smape[1] <- smape(arima1_pred, baa_val1)
+
+
+#2nd fold
+arima_fit <- auto.arima(baa_train2, seasonal = TRUE)
+arima1_pred <- forecast(arima_fit, h = 12)$mean
+arima_smape[2] <- smape(arima1_pred, baa_val2)
+
+#3rd fold
+arima_fit <- auto.arima(baa_train3, seasonal = TRUE)
+arima1_pred <- forecast(arima_fit, h = 12)$mean
+arima_smape[3] <- smape(arima1_pred, baa_val3)
+
+cat("Average sMAPE for ARIMA: ", mean(arima_smape), '\n')
+```
+
+## Residuals Check
+
+```{r}
+arima_res <- residuals(arima_fit)
+Box.test(arima_res, type="Ljung-Box")
+plot(arima_res, main = 'Residuals from ARIMA', ylab = 'Residuals')
+
+squared_arima_res <- arima_res^2
+par(mfcol=c(3,1))
+plot(squared_arima_res, main='Squared Residuals')
+acf(squared_arima_res, main='ACF Squared Residuals',lag.max=100,ylim=c(-0.5,1))
+pacf(squared_arima_res, main='PACF Squared Residuals',lag.max=100,ylim=c(-0.5,1))
+```
+
+## ARIMA with intervention
+
+
+```{r}
+library("TSA")
+baa.pre.intervention <- window(baa_train3, end = c(1980, 3))
+auto.arima(baa.pre.intervention)
+
+P1980 <- 1*(seq(baa_train3) == 75)
+S1980 <- 1*(seq(baa_train3) >= 75)
+intervention_fit <- arimax(baa_train3, order = c(3,2,0), 
+                    xtransf=data.frame(I1980 = S1980), transfer=list(c(1,0)), method='ML')
+
+plot(ts(filter(P1980, filter=0.8901, method='recursive', side=1)*(-0.2419), 
+frequency = 12, start=1974), type='h',ylab='1980 Intervention Pulse Effects')
+```
+
+## Residuals Check
+
+```{r}
+int_res <- intervention_fit$residuals
+
+Box.test(int_res, type="Ljung-Box")
+plot(int_res, main = 'Residuals from ARIMA Intervention', ylab = 'Residuals')
+
+squared_int_res <- int_res^2
+par(mfcol=c(3,1))
+plot(squared_int_res, main='Squared Residuals')
+acf(squared_int_res, main='ACF Squared Residuals',lag.max=100)
+pacf(squared_int_res, main='PACF Squared Residuals',lag.max=100)
+```
+
+Here, we will check from ARCH(1) to ARCH(10) plus GARCH (1,1) and extract the model with the lowest AIC.
+
+```{r}
+library(tseries)
+aic <- numeric(0)
+n <- length(int_res)
+for (i in 1:10){
+  arch_temp <- garch(int_res,order=c(0,i),trace=F)
+  loglik <- logLik(arch_temp)
+  aic[i] <- AIC(arch_temp)
+
+}
+
+garch_temp <- garch(int_res,order=c(1,1),trace=F)
+aic[11] <- AIC(garch_temp)
+aic
+
+
+plot(garch_temp$residuals, main = 'Residuals from GARCH(1,1)', ylab = 'Residuals')
+
+gar_res <- garch_temp$residuals
+squared_gar_res <- na.omit(gar_res^2)
+par(mfcol=c(3,1))
+plot(squared_gar_res, main='Squared Residuals')
+acf(squared_gar_res, main='ACF Squared Residuals',lag.max=100)
+pacf(squared_gar_res, main='PACF Squared Residuals',lag.max=100)
+
+```
+
+## Forecast
+
+```{r}
+#Extend transfer function by 12
+tf<-filter(1*(seq(1:(length(baa_train3)+12))==75),filter=0.5521330,method='recursive',side=1)*(-0.4936508)
+
+intervention_fit <- Arima(baa_train3, order = c(1,1,0), xreg=as.vector(tf[1:(length(tf)-12)]))
+
+intervention_pred <- forecast(intervention_fit, h = 12, xreg = as.vector(tf[515:length(tf)]))
+
+plot(intervention_pred)
+plot(intervention_pred, main = 'Forecast from ARIMA(3,2,0) with 1980 Intervention')
+```
+
+
+## ARIMA GARCH
+
+
+Here, we will check from ARCH(1) to ARCH(10) plus GARCH (1,1) and extract the model with the lowest AIC.
+
+```{r}
+library(tseries)
+aic <- numeric(0)
+n <- length(int_res)
+for (i in 1:10){
+  arch_temp <- garch(int_res,order=c(0,i),trace=F)
+  loglik <- logLik(arch_temp)
+  aic[i] <- AIC(arch_temp)
+
+}
+
+garch_temp <- garch(int_res,order=c(1,1),trace=F)
+aic[11] <- AIC(garch_temp)
+aic
+
+
+plot(garch_temp$residuals, main = 'Residuals from GARCH(1,1)', ylab = 'Residuals')
+gar_res <- garch_temp$residuals
+Box.test(gar_res, type="Ljung-Box")
+squared_gar_res <- na.omit(gar_res^2)
+par(mfcol=c(3,1))
+plot(squared_gar_res, main='Squared Residuals')
+acf(squared_gar_res, main='ACF Squared Residuals',lag.max=100)
+pacf(squared_gar_res, main='PACF Squared Residuals',lag.max=100)
+
+```
+
+We see that GARCH(1,1)has the lowest AIC and the Box test indicates that the squared residuals do not have any significant auto-correlations left.
+
+
+
+```{r}
+library(rugarch)
+## Fit an GARCH(1,1) model
+varModel <- list(model = "sGARCH", garchOrder = c(1,1))
+
+spec <- ugarchspec(varModel, mean.model = list(armaOrder = c(0,0)),
+                   distribution.model = "std")
+fit <- ugarchfit(spec, data = int_res) # fit
+
+garch_pred <- ugarchforecast(fit, n.ahead = 12)
+plot(garch_pred)
+```
+
+### Forecast result Combine
+
+```{r}
+int_garch_pred <- intervention_pred$mean + fitted(garch_pred)
+smape(int_garch_pred, baa_val3)
+```

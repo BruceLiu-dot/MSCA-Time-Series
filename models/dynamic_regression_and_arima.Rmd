@@ -1,0 +1,417 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+fig_width: 6
+fig_height: 4
+---
+
+
+```{r}
+getwd()
+setwd(dir = '/Users/nihaalz/Desktop/UChicago/2021-2022/Q3_Spring2022/Time Series/Project/MSCA-Time-Series-main/data/')
+
+library(readxl)
+library(xts)
+library(zoo)
+library(tseries)
+library(forecast)
+library(Metrics)
+library(car)
+library(lubridate)
+```
+
+READING IN DATA
+```{r}
+trsm3m = read.csv('3MTBSMR.csv',sep = ' ')
+bond = read.csv('bond.csv')
+cpi = read.csv('cpi.csv')
+dividend = read.csv('Dividend_New.csv')
+ltgby = read.csv('LTGBY.csv',sep = ' ')
+term_spread = read.csv('LTY_TB_Diff.csv')
+# money market mutual fund
+mmm = read.csv('MMM.csv')
+sp_index = read.csv('S&P.csv')
+sp500pe = read.csv('SP500PER.csv',sep = ' ')
+monthly_returns = read.csv('Sum of Monthly Squared Return.csv') # stationary
+```
+
+DATA CLEANING
+```{r}
+# treasury bill
+trsm3m = ts(trsm3m$X3.Month.Treasury.Bill.Secondary.Market.Rate,start=c(1974,1),frequency = 12)
+
+# aaa and baa bonds
+bond$observation_date = as.Date(bond$observation_date,'%Y-%m-%d')
+bond = bond[bond$observation_date >= as.Date('1974-01-01', format='%Y-%m-%d'),]
+bond = bond[bond$observation_date <= as.Date('2021-10-01', format='%Y-%m-%d'),]
+
+baa = ts(bond$BAA,start=c(1974,1),frequency = 12)
+baa10ym = ts(bond$BAA10YM,start=c(1974,1),frequency = 12)
+aaa = ts(bond$AAA,start=c(1974,1),frequency = 12)
+
+# consumer price index
+cpi$DATE = as.Date(cpi$DATE,'%Y-%m-%d')
+cpi = cpi[cpi$DATE <= as.Date('2021-10-01', format='%Y-%m-%d'),]
+cpi = ts(cpi$CPIAUCSL,start=c(1974,1),frequency = 12)
+
+# dividend
+dividend =  dividend[nrow(dividend):1,]
+dividend = ts(dividend$Value,start=c(1974,1),frequency = 12)
+
+# government bond yields
+ltgby$Date = as.Date(ltgby$Date,'%Y-%m-%d')
+ltgby = ts(ltgby$Long.Term.Government.Bond.Yields,start=c(1974,1),frequency = 12)
+
+# term spread
+term_spread$DATE = as.Date(term_spread$DATE,'%Y-%m-%d')
+term_spread = ts(term_spread$value,start=c(1974,1),frequency = 12)
+
+# money market mutual fund
+mmm$DATE = as.Date(mmm$DATE,format='%Y-%m-%d')
+mmm = ts(mmm$MMMFFAQ027S,start=c(1974,1),frequency = 12)
+
+# sp index
+sp_index$Day = substr(sp_index$Date,9,10)
+sp_index = sp_index[sp_index$Day == '01',]
+sp_index$Date = as.Date(sp_index$Date,'%Y-%m-%d')
+#sp_index = sp_index[sp_index$Date >= as.Date('1974-01-01', format='%Y-%m-%d'),]
+#sp_index = sp_index[sp_index$Date <= as.Date('2021-10-01', format='%Y-%m-%d'),]
+sp_index = ts(sp_index$Value,start=c(1974,1),frequency = 12)
+
+# sp500 pe ratio
+sp500pe$Day = substr(sp500pe$Date,9,10)
+sp500pe = sp500pe[sp500pe$Day == '01',]
+sp500pe = ts(sp500pe$S.P.500.PE.Ratio,start=c(1974,1),frequency = 12)
+
+# sum of monthly squared return
+monthly_returns = ts(monthly_returns$value,start=c(1974,1),frequency = 12)
+```
+
+EDA AND STATIONARITY TESTS
+```{r}
+par(mfrow=c(3,4),mar=c(1,1,1,1))
+plot.ts(trsm3m)
+plot.ts(baa)
+plot.ts(baa10ym)
+plot.ts(aaa)
+plot.ts(cpi)
+plot.ts(dividend)
+plot.ts(ltgby)
+plot.ts(term_spread)
+plot.ts(mmm)
+plot.ts(sp_index)
+plot.ts(sp500pe)
+plot.ts(monthly_returns)
+```
+
+```{r}
+par(mfrow=c(3,4),mar=c(1,1,1,1))
+acf(trsm3m)
+acf(baa)
+acf(baa10ym)
+acf(aaa)
+acf(cpi)
+acf(dividend)
+acf(ltgby)
+acf(term_spread)
+acf(mmm)
+acf(sp_index)
+acf(sp500pe)
+acf(monthly_returns)
+```
+
+
+```{r}
+kpss.test(trsm3m,null='Trend') #non stationary
+kpss.test(baa,null='Trend') # non stationary
+kpss.test(baa10ym,null='Trend') # non stationary
+kpss.test(aaa,null='Trend') # non stationary
+kpss.test(cpi,null='Trend') # non stationary
+kpss.test(dividend,null='Trend') # non stationary
+kpss.test(ltgby,null='Trend') # non stationary
+kpss.test(term_spread,null='Trend') # non stationary
+kpss.test(mmm,null='Trend') # non stationary
+kpss.test(sp_index,null='Trend') # non stationary
+kpss.test(sp500pe,null='Trend') # non stationary 
+kpss.test(monthly_returns,null='Trend') # stationary 
+```
+
+CONVERTING NON STATIONARY TIME SERIES TO STATIONARY BY TAKING 1ST ORDER DIFFERENCE
+```{r}
+trsm3m_diff = diff(log(trsm3m),lag=1)
+baa_diff = diff(log(baa),lag=1)
+baa10ym_diff = diff(log(baa10ym),lag=1)
+aaa_diff = diff(log(aaa),lag=1)
+cpi_diff = diff(log(cpi),lag=1)
+dividend_diff = diff(log(dividend),lag=1)
+ltgby_diff = diff(log(ltgby),lag=1)
+term_spread_diff = diff(term_spread,lag=1)
+mmm_diff = diff(log(mmm),lag=1)
+sp_index_diff = diff(log(sp_index),lag=1)
+sp500pe_diff = diff(log(sp500pe),lag=1)
+monthly_returns_diff = diff(log(monthly_returns),lag=1)
+```
+
+TESTING FOR STATIONARITY AFTER TAKING 1ST ORDER LAG
+```{r}
+kpss.test(trsm3m_diff,null='Trend') # stationary
+kpss.test(baa_diff,null='Trend') #  stationary
+kpss.test(baa10ym_diff,null='Trend') #  stationary
+kpss.test(aaa_diff,null='Trend') #  stationary
+kpss.test(cpi_diff,null='Trend') # non stationary
+kpss.test(dividend_diff,null='Trend') #  stationary
+kpss.test(ltgby_diff,null='Trend') #  stationary
+kpss.test(term_spread_diff,null='Trend') #  stationary
+kpss.test(mmm_diff,null='Trend') # non stationary
+kpss.test(sp_index_diff,null='Trend') #  stationary
+kpss.test(sp500pe_diff,null='Trend') #  stationary 
+kpss.test(monthly_returns_diff,null='Trend') # stationary 
+```
+
+ARIMA MODEL ON BAA
+```{r}
+arima_model = auto.arima(baa)
+summary(arima_model)
+```
+
+K FOLD CROSS VALIDATION ON ARIMA MODEL
+
+FOLD 1: 1974-2016, validate on 2017
+FOLD 2: 1974-2017, validate on 2018
+FOLD 3: 1974-2018, validate on 2019
+
+```{r}
+# fold 1
+baa.fold1 = window(baa,1974,c(2016,12))
+baa.val1 = window(baa,2017,c(2017,12))
+
+arima1 = auto.arima(baa.fold1)
+arima1.pred = forecast(arima1,h=12)$mean
+smape1 = smape(baa.val1,arima1.pred)
+
+arima_smape = c()
+arima_smape = append(arima_smape,smape1)
+```
+
+```{r}
+plot(arima1$residuals)
+```
+```{r}
+ Box.test(arima1$residuals,type='Ljung')
+```
+
+
+```{r}
+# fold 2
+baa.fold2 = window(baa,1974,c(2017,12))
+baa.val2 = window(baa,2018,c(2018,12))
+
+arima2 = auto.arima(baa.fold2)
+arima2.pred = forecast(arima2,h=12)$mean
+smape2 = smape(baa.val2,arima2.pred)
+
+arima_smape = append(arima_smape,smape2)
+```
+
+```{r}
+plot(arima2$residuals)
+```
+
+```{r}
+ Box.test(arima2$residuals,type='Ljung')
+```
+
+
+```{r}
+# fold 3
+baa.fold3 = window(baa,1974,c(2018,12))
+baa.val3 = window(baa,2019,c(2019,12))
+
+arima3 = auto.arima(baa.fold3)
+arima3.pred = forecast(arima3,h=12)$mean
+smape3 = smape(baa.val3,arima3.pred)
+
+arima_smape = append(arima_smape,smape3)
+```
+
+```{r}
+plot(arima3$residuals,main='ARIMA Residuals')
+```
+```{r}
+plot(forecast(arima3,h=12),main='ARIMA Forecast')
+```
+
+```{r}
+ Box.test(arima3$residuals,type='Ljung')
+```
+
+
+```{r}
+arima_smape
+mean(arima_smape)
+```
+
+ARIMA MODEL WITH FORECASTING
+```{r}
+baa_train = window(baa,1974, c(2020,9))
+baa_test = window(baa, c(2020,10),c(2021,10))
+
+baa_arima = auto.arima(baa_train)
+baa_arima_pred = forecast(baa_arima,h=12)$mean
+
+baa_smape = smape(baa_test,baa_arima_pred)
+baa_smape
+```
+
+```{r}
+plot(baa_arima$residuals,main='ARIMA Residuals')
+```
+
+```{r}
+ Box.test(baa_arima$residuals,type='Ljung')
+```
+
+
+```{r}
+plot(forecast(baa_arima,h=12),main='ARIMA Forecast')
+```
+
+```{r}
+summary(baa_arima)
+```
+
+
+DYNAMIC REGRESSION MODEL
+```{r}
+default_yield_spread = aaa_diff - baa_diff
+default_return_spread = trsm3m_diff - baa_diff
+  
+predictors = cbind(default_yield_spread,baa10ym_diff,default_return_spread,dividend_diff,ltgby_diff,term_spread_diff,sp_index_diff,sp500pe_diff,monthly_returns_diff)
+dynamic_model = auto.arima(baa_diff, xreg = predictors)
+summary(dynamic_model)
+```
+
+K FOLD CROSS VALIDATION ON DYNAMIC REGRESSION
+
+FOLD 1: 1974-2016, validate on 2017
+FOLD 2: 1974-2017, validate on 2018
+FOLD 3: 1974-2018, validate on 2019
+
+```{r}
+# fold 1
+
+x_train1 = window(predictors,1974,c(2016,12))
+y_train1 = window(baa_diff,1974,c(2016,12))
+
+x_test1 = window(predictors, 2017, c(2017,12))
+y_test1 = window(baa_diff, 2017, c(2017,12))
+
+dynamic1 = auto.arima(y_train1, xreg = x_train1)
+dynamic.pred1 = forecast(dynamic1,h=12,xreg = x_test1)$mean
+
+dynamic.smape = c()
+dynamic.smape1 = smape(y_test1,dynamic.pred1)
+dynamic.smape = append(dynamic.smape,dynamic.smape1)
+
+```
+
+```{r}
+plot(dynamic1$residuals)
+```
+
+```{r}
+ Box.test(dynamic1$residuals,type='Ljung')
+```
+
+
+```{r}
+# fold 2
+
+x_train2 = window(predictors,1974,c(2017,12))
+y_train2 = window(baa_diff,1974,c(2017,12))
+
+x_test2 = window(predictors, 2018, c(2018,12))
+y_test2 = window(baa_diff, 2018, c(2018,12))
+
+dynamic2 = auto.arima(y_train2, xreg = x_train2)
+dynamic.pred2 = forecast(dynamic2,h=12,xreg=x_test2)$mean
+
+dynamic.smape2 = smape(y_test2,dynamic.pred2)
+dynamic.smape = append(dynamic.smape,dynamic.smape2)
+
+```
+
+```{r}
+plot(dynamic2$residuals)
+```
+
+```{r}
+ Box.test(dynamic2$residuals,type='Ljung')
+```
+
+
+```{r}
+# fold 3
+
+x_train3 = window(predictors,1974,c(2018,12))
+y_train3 = window(baa_diff,1974,c(2018,12))
+
+x_test3 = window(predictors, 2019, c(2019,12))
+y_test3 = window(baa_diff, 2019, c(2019,12))
+
+dynamic3 = auto.arima(y_train3, xreg = x_train3)
+dynamic.pred3 = forecast(dynamic3,h=12,xreg=x_test3)$mean
+
+dynamic.smape3 = smape(y_test3,dynamic.pred3)
+dynamic.smape = append(dynamic.smape,dynamic.smape3)
+
+
+```
+
+```{r}
+plot(dynamic3$residuals,main='Dynamic Regression Residuals')
+```
+
+```{r}
+ Box.test(dynamic3$residuals,type='Ljung')
+```
+
+```{r}
+plot(forecast(dynamic3,h=12,xreg=x_test3),main='Dynamic Regression Forecast')
+```
+
+```{r}
+dynamic.smape
+mean(dynamic.smape)
+```
+
+
+DYNAMIC REGRESSION MODEL WITH FORECASTING
+```{r}
+x_train = window(predictors,1974,c(2020,9))
+y_train = window(baa_diff,1974,c(2020,9))
+
+x_test = window(predictors, c(2020,10), c(2021,10))
+y_test = window(baa_diff, c(2020,10), c(2021,10))
+
+dynamic = auto.arima(y_train, xreg = x_train)
+dynamic.pred = forecast(dynamic,h=12,xreg=x_test)$mean
+
+dynamic.smape = smape(y_test,dynamic.pred)
+dynamic.smape
+```
+
+```{r}
+plot(dynamic$residuals,main='Dynamic Regression Residuals')
+```
+
+```{r}
+ Box.test(dynamic$residuals,type='Ljung')
+```
+
+```{r}
+plot(forecast(dynamic,h=12,xreg=x_test),main='Dynamic Regression Forecast')
+```
+
